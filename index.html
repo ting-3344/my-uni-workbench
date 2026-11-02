@@ -441,6 +441,7 @@ body.td-dragging .titem:hover{transform:none}
 }
 .td-form .inp:focus{border-color:var(--iris);box-shadow:0 0 0 3px rgba(124,92,214,.12)}
 .td-form .inp::placeholder{color:var(--ink3)}
+.td-form-t{font-size:12.5px;font-weight:600;color:var(--iris-d);letter-spacing:.5px;margin-bottom:7px}
 .td-form-row{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
 
 /* 表格 */
@@ -840,8 +841,10 @@ function drawerBody(s) {
 
   if (s.type === 'todo') {
     var items = todoItemsSorted(s).filter(function (i) { return !i.done; });
-    var late = items.filter(function (i) { return i.date && i.date < d; });
+    var late = items.filter(function (i) { return i.date && i.date < d && i.dismissed !== d; });
     var near = items.filter(function (i) { return !i.date || i.date >= d; }).slice(0, 8);
+    h += '<div class="row" style="gap:8px"><button class="btn sm gold" data-act="dv-goto" data-id="' + s.id + '">＋ 新建待办</button>' +
+      '<span class="muted">进板块添加 / 管理</span></div>';
     if (late.length) h += '<div class="warnbox mb">有 ' + late.length + ' 件已逾期未完成，记得顺延或处理掉。</div>';
     if (!near.length) h += emptyBox('近期没有待办，进板块加一条吧');
     near.forEach(function (i) {
@@ -924,10 +927,10 @@ function drawerBody(s) {
   }
 
   if (s.type === 'media') {
-    var md = s.data || {}, names2 = { bench: '① 对标库', viral: '② 爆款拆解', ideas: '③ 灵感池', titles: '④ 标题', drafts: '⑤ 正文', shots: '⑥ 配图', logs: '⑦ 数据台账', assets: '⑧ 素材库' };
-    if (md.memo) h += '<div class="tip mb">' + nl2br(String(md.memo).slice(0, 160)) + (String(md.memo).length > 160 ? '…' : '') + '</div>';
+    var mdata = s.data || {}, names2 = { bench: '① 对标库', viral: '② 爆款拆解', ideas: '③ 灵感池', titles: '④ 标题', drafts: '⑤ 正文', shots: '⑥ 配图', logs: '⑦ 数据台账', assets: '⑧ 素材库' };
+    if (mdata.memo) h += '<div class="tip mb">' + nl2br(String(mdata.memo).slice(0, 160)) + (String(mdata.memo).length > 160 ? '…' : '') + '</div>';
     Object.keys(names2).forEach(function (k) {
-      h += '<div class="kv"><span class="k">' + names2[k] + '</span><span class="v">' + ((md[k] || []).length) + ' 条</span></div>';
+      h += '<div class="kv"><span class="k">' + names2[k] + '</span><span class="v">' + ((mdata[k] || []).length) + ' 条</span></div>';
     });
     return h;
   }
@@ -1435,7 +1438,7 @@ reg('overview', {
     var doneN = tod.filter(function (x) { return x.it.done; }).length;
     var overdueN = 0;
     sectionsOfType('todo').forEach(function (sec) {
-      (sec.data.items || []).forEach(function (it) { if (!it.done && it.date && it.date < d) overdueN++; });
+      (sec.data.items || []).forEach(function (it) { if (!it.done && it.date && it.date < d && it.dismissed !== d) overdueN++; });
     });
 
     /* --- 打卡 --- */
@@ -1462,6 +1465,14 @@ reg('overview', {
       '<div class="hs"><b>' + hbDone + ' / ' + hbTotal + '</b><span>今日打卡</span></div>' +
       '<div class="hs"><b>' + overdueN + '</b><span>逾期未完成</span></div>' +
       '</div></div>';
+
+    /* ============ 快捷新建待办（一键跳到待办板块并定位输入框） ============ */
+    var tdSecQuick = sectionsOfType('todo')[0];
+    if (tdSecQuick) {
+      h += '<div class="row mt-s" style="gap:9px;flex-wrap:wrap">' +
+        '<button class="btn gold" data-act="ov-td-new">＋ 新建待办</button>' +
+        '<span class="muted">写今天想做的事，自动存进「' + esc(tdSecQuick.name || '近期待办') + '」</span></div>';
+    }
 
     /* ============ 激励卡 ============ */
     var q = todayQuote();
@@ -1579,6 +1590,14 @@ reg('overview', {
     var lgGet = function (id) { return (s.data.longGoals || []).filter(function (x) { return x.id === id; })[0]; };
     var cdGet = function (id) { return (s.data.countdowns || []).filter(function (x) { return x.id === id; })[0]; };
 
+    /* 首页「＋ 新建待办」：跳到待办板块并定位到输入框 */
+    if (act === 'ov-td-new') {
+      var tds = sectionsOfType('todo')[0];
+      if (!tds) { toast('还没有待办板块，去后台管理添加一个'); return true; }
+      App.ui['fopen_' + tds.id] = true;
+      goto('#/b/' + tds.id);
+      return true;
+    }
     if (act === 'ov-todo') {
       var p = el.getAttribute('data-id').split('|');
       var sec = secById(p[0]);
@@ -1674,6 +1693,8 @@ reg('overview', {
     if (act === 'dv-close') { closeDrawer(); return true; }
     if (act === 'dv-goto') {
       var gid2 = el.getAttribute('data-id');
+      var gs = secById(gid2);
+      if (gs && gs.type === 'todo') App.ui['fopen_' + gid2] = true;   /* 跳到待办板块时定位新建输入框 */
       closeDrawer();
       goto('#/b/' + gid2);
       return true;
@@ -1937,27 +1958,25 @@ reg('todo', {
 
     var h = '<div class="card"><div class="card-t"><h3>📌 近期待办</h3><span class="sp"></span>' +
       '<span class="muted">完成 ' + doneN + '/' + total + '</span>' +
-      '<button class="btn xs gold" data-act="td-form-open">＋ 添加任务</button>' +
+      '<button class="btn xs gold" data-act="td-focus" title="定位到新建输入框">＋ 添加任务</button>' +
       '<button class="btn xs plain" data-act="td-cats">🎨 分类</button>' +
       '<button class="btn xs plain" data-act="td-clear">清理已完成</button></div>' +
       '<div class="pg mb"><i style="width:' + pct(doneN, total) + '%"></i></div>';
 
-    /* 前台快捷添加表单：标题 + 日期 + 分类，回车或点按钮即添加 */
-    if (App.ui['fopen_' + s.id]) {
-      var t0 = todoTypesOf(s);
-      var ft0 = App.ui['t_' + s.id] || t0[0];
-      h += '<div class="td-form" id="tdForm">' +
-        '<input class="inp" id="tdFTitle" placeholder="想做点什么？写完回车直接添加" maxlength="80">' +
-        '<div class="td-form-row">' +
-        '<select class="t-sel" id="tdFDate">' + todoDateOptions(today()) + '</select>' +
-        '<select class="t-sel" id="tdFType">' +
-        t0.map(function (t) { return '<option' + (t === ft0 ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') +
-        '</select>' +
-        '<span class="sp"></span>' +
-        '<button class="btn xs plain" data-act="td-form-cancel">取消</button>' +
-        '<button class="btn xs gold" data-act="td-form-ok">添加</button>' +
-        '</div></div>';
-    }
+    /* 新建待办：常驻输入条（标题 + 日期 + 分类，回车或点按钮即添加） */
+    var t0 = todoTypesOf(s);
+    var ft0 = App.ui['t_' + s.id] || t0[0];
+    h += '<div class="td-form" id="tdForm">' +
+      '<div class="td-form-t">✏️ 新建待办</div>' +
+      '<input class="inp" id="tdFTitle" placeholder="想做点什么？写完回车直接添加" maxlength="80">' +
+      '<div class="td-form-row">' +
+      '<select class="t-sel" id="tdFDate">' + todoDateOptions(today()) + '</select>' +
+      '<select class="t-sel" id="tdFType">' +
+      t0.map(function (t) { return '<option' + (t === ft0 ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') +
+      '</select>' +
+      '<span class="sp"></span>' +
+      '<button class="btn sm gold" data-act="td-form-ok">＋ 添加</button>' +
+      '</div></div>';
 
     /* 范围 + 分类过滤 */
     h += '<div class="row mb-s" style="gap:8px"><div class="seg">' +
@@ -1974,18 +1993,21 @@ reg('todo', {
           '<span class="cdot" style="background:' + c + '"></span>' + esc(t) + '</span>';
       }).join('') + '</div>';
 
-    /* 逾期未完成 */
-    var overdue = items.filter(function (i) { return !i.done && i.date && i.date < d; });
+    /* 逾期未完成（当天已忽略的不再显示；勾选完成 / 挪到今天 / 忽略，三选一） */
+    var overdue = items.filter(function (i) {
+      return !i.done && i.date && i.date < d && i.dismissed !== d;
+    });
     if (overdue.length) {
       h += '<div class="warnbox mb">' +
-        '<div class="row" style="gap:8px"><b>⚠ 有 ' + overdue.length + ' 件事拖着没做完</b><span class="sp"></span>' +
+        '<div class="row" style="gap:8px;flex-wrap:wrap"><b>⚠ 有 ' + overdue.length + ' 件事拖着没做完</b><span class="sp"></span>' +
         '<button class="btn xs" data-act="td-shift-all">全部挪到今天</button></div>';
       overdue.slice(0, 5).forEach(function (i) {
-        h += '<div class="row mt-s" style="gap:8px">' +
-          '<div class="cbx" data-act="td-toggle" data-id="' + i.id + '">✓</div>' +
+        h += '<div class="row mt-s" style="gap:8px;flex-wrap:wrap">' +
+          '<div class="cbx" data-act="td-toggle" data-id="' + i.id + '" title="标记完成">✓</div>' +
           '<span class="sp" style="font-size:13.5px">' + esc(i.title || '（未命名）') + '</span>' +
           '<span class="tag">' + md(i.date) + '</span>' +
-          '<button class="btn xs" data-act="td-shift" data-id="' + i.id + '">挪到今天</button></div>';
+          '<button class="btn xs" data-act="td-shift" data-id="' + i.id + '">挪到今天</button>' +
+          '<button class="btn xs plain" data-act="td-ignore" data-id="' + i.id + '">忽略</button></div>';
       });
       h += '</div>';
     }
@@ -2076,21 +2098,26 @@ reg('todo', {
     var b = document.getElementById('tdBookDate');
     if (b) b.addEventListener('change', function () { App.ui['bd_' + s.id] = b.value; refresh(); });
     bindTodoDrag();
-    /* 快捷添加表单：自动聚焦标题，回车提交 */
-    var ft = document.getElementById('tdFTitle');
-    if (ft) {
-      try { ft.focus(); } catch (e) { }
-      ft.addEventListener('keydown', function (ev) {
+    /* 新建待办输入条：回车提交；点过标题栏按钮时才自动聚焦（刷新不抢焦点） */
+    var ft2 = document.getElementById('tdFTitle');
+    if (ft2) {
+      ft2.addEventListener('keydown', function (ev) {
         if (ev.key === 'Enter') { ev.preventDefault(); todoFormSubmit(s); }
       });
+      if (App.ui['fopen_' + s.id]) { App.ui['fopen_' + s.id] = false; try { ft2.focus(); } catch (e) { } }
     }
   },
 
   click: function (act, el, s) {
     var get = function (i) { return (s.data.items || []).filter(function (x) { return x.id === i; })[0]; };
     /* ---- 前台快捷添加表单 ---- */
-    if (act === 'td-form-open') { App.ui['fopen_' + s.id] = true; refresh(); return true; }
-    if (act === 'td-form-cancel') { App.ui['fopen_' + s.id] = false; refresh(); return true; }
+    if (act === 'td-focus') {
+      App.ui['fopen_' + s.id] = true;
+      refresh();
+      var f = document.getElementById('tdFTitle');
+      if (f) { try { f.focus(); f.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { } }
+      return true;
+    }
     if (act === 'td-form-ok') { todoFormSubmit(s); return true; }
     if (act === 'td-add') {
       var t = todoTypesOf(s);
@@ -2158,10 +2185,19 @@ reg('todo', {
     }
     if (act === 'td-shift' || act === 'td-shift-all') {
       var list = act === 'td-shift-all'
-        ? (s.data.items || []).filter(function (i) { return !i.done && i.date && i.date < today(); })
+        ? (s.data.items || []).filter(function (i) { return !i.done && i.date && i.date < today() && i.dismissed !== today(); })
         : (s.data.items || []).filter(function (x) { return x.id === el.getAttribute('data-id'); });
-      list.forEach(function (x) { x.date = today(); });
+      list.forEach(function (x) { x.date = today(); x.dismissed = ''; });
       save(); refresh(); toast(list.length ? '已挪到今天 ' + list.length + ' 件' : '没有需要顺延的');
+      return true;
+    }
+    /* 忽略逾期：仅当天不再提醒，任务保留，明天若仍未完成会重新出现 */
+    if (act === 'td-ignore') {
+      var ig = (s.data.items || []).filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
+      if (ig) {
+        ig.dismissed = today();
+        save(); refresh(); toast('已忽略，明天仍未完成会再提醒你');
+      }
       return true;
     }
     /* ---- 分类管理 ---- */
