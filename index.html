@@ -1907,14 +1907,12 @@ function todoRowHTML(s, i, types) {
   var idx = s.data.items.indexOf(i);
   var d = today();
   var late = !i.done && i.date && i.date < d;
-  var fresh = i.created === d && !i.done;
   var cc = catColor(s, i.type);
   var tint = 'background:' + cc + '14;border-color:' + cc + '3a';
   var h = '<div class="titem' + (i.done ? ' done' : '') + '" style="' + tint + '" data-tid="' + i.id + '">' +
     '<div class="t-grip" data-act="td-drag" title="按住拖拽调整顺序"></div>' +
     '<div class="cbx' + (i.done ? ' on' : '') + '" data-act="td-toggle" data-id="' + i.id + '">✓</div>' +
     '<div class="t-b">' +
-    (fresh ? '<span class="mini">今日新增</span> ' : '') +
     '<input class="t-title" data-bind="items.' + idx + '.title" value="' + esc(i.title) + '"' +
     ' placeholder="写点什么…"' + (App.ui['f_' + s.id] === i.id ? ' data-focus="1"' : '') + '>' +
     '<div class="t-meta">' +
