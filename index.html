@@ -428,6 +428,21 @@ body.td-dragging .titem:hover{transform:none}
 }
 .td-drag-hint.show{opacity:1}
 
+/* 前台快捷添加表单 */
+.td-form{
+  margin-bottom:14px;padding:14px 15px;border-radius:18px;
+  background:rgba(255,255,255,.72);border:1.5px solid rgba(124,92,214,.35);
+  box-shadow:var(--sh2);animation:rise .24s cubic-bezier(.2,.8,.3,1) both;
+}
+.td-form .inp{
+  width:100%;padding:9px 12px;font-size:14.5px;border-radius:12px;
+  background:#fff;border:1px solid var(--line2);box-shadow:var(--sh-in);outline:none;
+  transition:border-color .16s ease,box-shadow .16s ease;font-family:inherit;
+}
+.td-form .inp:focus{border-color:var(--iris);box-shadow:0 0 0 3px rgba(124,92,214,.12)}
+.td-form .inp::placeholder{color:var(--ink3)}
+.td-form-row{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
+
 /* 表格 */
 .tw{overflow-x:auto;border-radius:var(--r2);border:1px solid var(--line2);background:rgba(255,255,255,.8);backdrop-filter:blur(10px);box-shadow:var(--sh2)}
 table.tb{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;min-width:720px}
@@ -1922,9 +1937,27 @@ reg('todo', {
 
     var h = '<div class="card"><div class="card-t"><h3>📌 近期待办</h3><span class="sp"></span>' +
       '<span class="muted">完成 ' + doneN + '/' + total + '</span>' +
+      '<button class="btn xs gold" data-act="td-form-open">＋ 添加任务</button>' +
       '<button class="btn xs plain" data-act="td-cats">🎨 分类</button>' +
       '<button class="btn xs plain" data-act="td-clear">清理已完成</button></div>' +
       '<div class="pg mb"><i style="width:' + pct(doneN, total) + '%"></i></div>';
+
+    /* 前台快捷添加表单：标题 + 日期 + 分类，回车或点按钮即添加 */
+    if (App.ui['fopen_' + s.id]) {
+      var t0 = todoTypesOf(s);
+      var ft0 = App.ui['t_' + s.id] || t0[0];
+      h += '<div class="td-form" id="tdForm">' +
+        '<input class="inp" id="tdFTitle" placeholder="想做点什么？写完回车直接添加" maxlength="80">' +
+        '<div class="td-form-row">' +
+        '<select class="t-sel" id="tdFDate">' + todoDateOptions(today()) + '</select>' +
+        '<select class="t-sel" id="tdFType">' +
+        t0.map(function (t) { return '<option' + (t === ft0 ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') +
+        '</select>' +
+        '<span class="sp"></span>' +
+        '<button class="btn xs plain" data-act="td-form-cancel">取消</button>' +
+        '<button class="btn xs gold" data-act="td-form-ok">添加</button>' +
+        '</div></div>';
+    }
 
     /* 范围 + 分类过滤 */
     h += '<div class="row mb-s" style="gap:8px"><div class="seg">' +
@@ -2043,10 +2076,22 @@ reg('todo', {
     var b = document.getElementById('tdBookDate');
     if (b) b.addEventListener('change', function () { App.ui['bd_' + s.id] = b.value; refresh(); });
     bindTodoDrag();
+    /* 快捷添加表单：自动聚焦标题，回车提交 */
+    var ft = document.getElementById('tdFTitle');
+    if (ft) {
+      try { ft.focus(); } catch (e) { }
+      ft.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); todoFormSubmit(s); }
+      });
+    }
   },
 
   click: function (act, el, s) {
     var get = function (i) { return (s.data.items || []).filter(function (x) { return x.id === i; })[0]; };
+    /* ---- 前台快捷添加表单 ---- */
+    if (act === 'td-form-open') { App.ui['fopen_' + s.id] = true; refresh(); return true; }
+    if (act === 'td-form-cancel') { App.ui['fopen_' + s.id] = false; refresh(); return true; }
+    if (act === 'td-form-ok') { todoFormSubmit(s); return true; }
     if (act === 'td-add') {
       var t = todoTypesOf(s);
       var ftv = App.ui['t_' + s.id];
@@ -2194,6 +2239,32 @@ reg('todo', {
 });
 
 /* ===================== 待办拖拽排序（鼠标 / 触屏通用，平板适配） ===================== */
+/* 前台快捷添加表单提交：标题 + 日期 + 分类 */
+function todoFormSubmit(s) {
+  var ti = document.getElementById('tdFTitle');
+  var title = ti ? String(ti.value || '').trim() : '';
+  if (!title) { toast('先写个任务名'); if (ti) { try { ti.focus(); } catch (e) { } } return false; }
+  var de = document.getElementById('tdFDate');
+  var ye = document.getElementById('tdFType');
+  var dv = de ? de.value : today();
+  var yv = ye ? ye.value : '';
+  /* 手动排序模式下：新任务接在当前顺序末尾 */
+  var mx = 0, hasOrd = false;
+  (s.data.items || []).forEach(function (x) { if (x && x.ord != null) { hasOrd = true; if (x.ord > mx) mx = x.ord; } });
+  var nit = {
+    id: uid('t'), date: dv || '', time: '',
+    title: title, type: yv || todoTypesOf(s)[0], done: false, note: '', seq: Date.now(), created: today()
+  };
+  if (hasOrd) nit.ord = mx + 1;
+  s.data.items.push(nit);
+  save();
+  /* 保持表单打开，方便连续添加；清空标题继续输入 */
+  refresh();
+  var ti2 = document.getElementById('tdFTitle');
+  if (ti2) { ti2.value = ''; try { ti2.focus(); } catch (e) { } }
+  toast('已添加：' + title);
+  return true;
+}
 function tdHasManualOrd(s) {
   var f = false;
   (s.data.items || []).forEach(function (x) { if (x && x.ord != null) f = true; });
